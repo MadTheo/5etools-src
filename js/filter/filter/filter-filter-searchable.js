@@ -1,31 +1,27 @@
-import {Filter} from "./filter-filter-generic.js";
+import {CompSearch, Filter} from "./filter-filter-generic.js";
 import {PILL_STATE__IGNORE, PILL_STATE__NO, PILL_STATE__YES} from "../filter-constants.js";
+
+class _CompSearchSearchable extends CompSearch {
+	_getDefaultState () {
+		return {
+			...super._getDefaultState(),
+			search: "",
+		};
+	}
+}
 
 export class SearchableFilter extends Filter {
 	constructor (opts) {
-		super(opts);
-
-		this._compSearch = BaseComponent.fromObject({
-			search: "",
-			searchTermParent: "",
-		});
-	}
-
-	handleSearch (searchTerm) {
-		const out = super.handleSearch(searchTerm);
-
-		this._compSearch._state.searchTermParent = searchTerm;
-
-		return out;
+		super({...opts, compSearch: new _CompSearchSearchable()});
 	}
 
 	_getPill (item) {
 		const btnPill = super._getPill(item);
 
 		const hkIsVisible = () => {
-			if (this._compSearch._state.searchTermParent) return btnPill.toggleClass("ve-fltr__hidden--inactive", false);
+			if (this._compSearch._state.searchTermParent) return btnPill.vee.toggleClass("ve-fltr__hidden--inactive", false);
 
-			btnPill.toggleClass("ve-fltr__hidden--inactive", this._state[item.item] === PILL_STATE__IGNORE);
+			btnPill.vee.toggleClass("ve-fltr__hidden--inactive", this._state[item.item] === PILL_STATE__IGNORE);
 		};
 		this._addHook("state", item.item, hkIsVisible);
 		this._compSearch._addHookBase("searchTermParent", hkIsVisible);
@@ -53,7 +49,7 @@ export class SearchableFilter extends Filter {
 			evt.preventDefault();
 
 			// Keep the dropdown open
-			iptSearch.focuse();
+			iptSearch.vee.focus();
 
 			if (evt.shiftKey) {
 				this._doSetPillsClear();
@@ -63,7 +59,7 @@ export class SearchableFilter extends Filter {
 			else this._state[item.item] = state;
 		};
 
-		const btn = e_({
+		const btn = veE({
 			tag: "div",
 			clazz: `ve-no-shrink ve-clickable ve-fltr-search__btn-activate ve-fltr-search__btn-activate--${subtype} ve-flex-vh-center`,
 			click: evt => handleClick(evt),
@@ -95,7 +91,7 @@ export class SearchableFilter extends Filter {
 			},
 		);
 
-		const wrpValues = e_({
+		const wrpValues = veE({
 			tag: "div",
 			clazz: "ve-overflow-y-auto ve-bt-0 ve-absolute ve-fltr-search__wrp-values",
 		});
@@ -107,13 +103,13 @@ export class SearchableFilter extends Filter {
 		this._render_bindSearchHandler_focus({iptSearch, fnsCleanup, rowMetas, wrpValues});
 		this._render_bindSearchHandler_blur({iptSearch});
 
-		const wrp = ee`<div class="ve-fltr-search__wrp-search ve-flex-col ve-relative ve-mt-1 ve-mx-2p ve-mb-1">
+		const wrp = veT`<div class="ve-fltr-search__wrp-search ve-flex-col ve-relative ve-mt-1 ve-mx-2p ve-mb-1">
 			${iptSearch}
 			${wrpValues}
-		</div>`.prependTo(this.__wrpPills);
+		</div>`.vee.prependTo(this.__wrpPills);
 
 		const hkParentSearch = () => {
-			wrp.toggleVe(!this._compSearch._state.searchTermParent);
+			wrp.vee.toggle(!this._compSearch._state.searchTermParent);
 		};
 		this._compSearch._addHookBase("searchTermParent", hkParentSearch);
 		hkParentSearch();
@@ -123,7 +119,7 @@ export class SearchableFilter extends Filter {
 
 	_render_bindSearchHandler_keydown ({iptSearch, rowMetas}) {
 		iptSearch
-			.onn("keydown", evt => {
+			.vee.onn("keydown", evt => {
 				switch (evt.key) {
 					case "Escape": evt.stopPropagation(); return iptSearch.blur();
 
@@ -140,7 +136,7 @@ export class SearchableFilter extends Filter {
 						if (!visibleRowMetas.length) return;
 						if (evt.shiftKey) this._doSetPillsClear();
 						this._state[visibleRowMetas[0].item.item] = (EventUtil.isCtrlMetaKey(evt)) ? PILL_STATE__NO : PILL_STATE__YES;
-						iptSearch.blure();
+						iptSearch.vee.blur();
 						break;
 					}
 				}
@@ -149,7 +145,7 @@ export class SearchableFilter extends Filter {
 
 	_render_bindSearchHandler_focus ({iptSearch, fnsCleanup, rowMetas, wrpValues}) {
 		iptSearch
-			.onn("focus", () => {
+			.vee.onn("focus", () => {
 				fnsCleanup
 					.splice(0, fnsCleanup.length)
 					.forEach(fn => fn());
@@ -172,7 +168,7 @@ export class SearchableFilter extends Filter {
 	_render_bindSearchHandler_focus_getRowMeta ({iptSearch, fnsCleanup, rowMetas, wrpValues, item}) {
 		const dispName = this._getDisplayText(item);
 
-		const eleName = e_({
+		const eleName = veE({
 			tag: "div",
 			clazz: "ve-fltr-search__disp-name ve-ml-2",
 		});
@@ -184,9 +180,9 @@ export class SearchableFilter extends Filter {
 			subtype: "yes",
 			state: PILL_STATE__YES,
 		});
-		btnBlue.addClass("ve-br-0");
-		btnBlue.addClass("ve-btr-0");
-		btnBlue.addClass("ve-bbr-0");
+		btnBlue.vee.addClass("ve-br-0");
+		btnBlue.vee.addClass("ve-btr-0");
+		btnBlue.vee.addClass("ve-bbr-0");
 
 		const btnRed = this._render_getRowBtn({
 			fnsCleanup,
@@ -195,11 +191,11 @@ export class SearchableFilter extends Filter {
 			subtype: "no",
 			state: PILL_STATE__NO,
 		});
-		btnRed.addClass("ve-bl-0");
-		btnRed.addClass("ve-btl-0");
-		btnRed.addClass("ve-bbl-0");
+		btnRed.vee.addClass("ve-bl-0");
+		btnRed.vee.addClass("ve-btl-0");
+		btnRed.vee.addClass("ve-bbl-0");
 
-		const row = e_({
+		const row = veE({
 			tag: "div",
 			clazz: "ve-py-1p ve-px-2 ve-flex-v-center ve-fltr-search__wrp-row",
 			children: [
@@ -231,7 +227,7 @@ export class SearchableFilter extends Filter {
 						const ixCur = visibleRowMetas.indexOf(out);
 						const prev = visibleRowMetas[ixCur - 1];
 						if (prev) return prev.row.focus();
-						iptSearch.focuse();
+						iptSearch.vee.focus();
 						break;
 					}
 
@@ -264,7 +260,7 @@ export class SearchableFilter extends Filter {
 
 			rowMetas.forEach(({item, row}) => {
 				row.isVisible = item.searchText.includes(searchTerm);
-				row.toggleVe(row.isVisible);
+				row.vee.toggle(row.isVisible);
 			});
 
 			// region Underline matching part
@@ -289,7 +285,7 @@ export class SearchableFilter extends Filter {
 
 	_render_bindSearchHandler_blur ({iptSearch}) {
 		iptSearch
-			.onn("blur", () => {
+			.vee.onn("blur", () => {
 				this._compSearch._state.search = "";
 			});
 	}

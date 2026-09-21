@@ -19,6 +19,7 @@ export class ConverterFeat extends ConverterFeatureBase {
 	 * @param options.isAppend Default output append mode.
 	 * @param options.source Entity source.
 	 * @param options.page Entity page.
+	 * @param [options.isAddPageNumber] Whether to include the page in the output. Defaults to true if a page is provided.
 	 * @param options.titleCaseFields Array of fields to be title-cased in this entity (if enabled).
 	 * @param options.isTitleCase Whether title-case fields should be title-cased in this entity.
 	 * @param options.styleHint
@@ -60,20 +61,47 @@ export class ConverterFeat extends ConverterFeatureBase {
 		return statsOut;
 	}
 
+	/* -------------------------------------------- */
+
 	static _doParseText_stepName (state) {
 		state.entity.name = this._getAsTitle("name", state.curLine, state.options.titleCaseFields, state.options.isTitleCase);
 	}
 
+	/* -------------------------------------------- */
+
+	static _getCategoryMeta ({str}) {
+		const mFeatCategory = new RegExp(`^${this._RE_FEAT_TYPE.source}(?: Feat)?`).exec(str);
+		if (mFeatCategory) {
+			return {
+				category: Parser.featCategoryFromFull(mFeatCategory.groups.category),
+				remaining: str.slice(mFeatCategory[0].length).trim(),
+			};
+		}
+
+		const mFeatCategoryUnknown = /(?<ptCategory>.*) Feat (?=\(Prerequisite\b)/i.exec(str);
+		if (mFeatCategoryUnknown) {
+			const categoryRaw = mFeatCategoryUnknown.groups.ptCategory.trim();
+			return {
+				category: categoryRaw,
+				categoryWarning: `Unknown feat category "${categoryRaw}"`,
+				remaining: str.slice(mFeatCategoryUnknown[0].length).trim(),
+			};
+		}
+
+		return null;
+	}
+
 	static _doParseText_stepCategory (state, options) {
-		const mFeatCategory = new RegExp(`^${this._RE_FEAT_TYPE.source}(?: Feat)?`).exec(state.curLine);
-		if (!mFeatCategory) {
+		const categoryMeta = this._getCategoryMeta({str: state.curLine});
+		if (!categoryMeta) {
 			state.ixToConvert--;
 			return;
 		}
 
-		state.entity.category = Parser.featCategoryFromFull(mFeatCategory.groups.category);
+		state.entity.category = categoryMeta.category;
+		if (categoryMeta.categoryWarning) options.cbWarning(`(${state.entity.name}) Category requires manual conversion`);
 
-		let remaining = state.curLine.slice(mFeatCategory[0].length).trim();
+		let remaining = categoryMeta.remaining;
 		if (!remaining) return;
 
 		remaining = remaining.replace(/^\((.*)\)$/, "$1");
@@ -94,6 +122,8 @@ export class ConverterFeat extends ConverterFeatureBase {
 			});
 	}
 
+	/* -------------------------------------------- */
+
 	static _doParseText_stepPrerequisites (state, options) {
 		if (!/^prerequisite:/i.test(state.curLine)) {
 			state.ixToConvert--;
@@ -111,6 +141,8 @@ export class ConverterFeat extends ConverterFeatureBase {
 			});
 	}
 
+	/* -------------------------------------------- */
+
 	static _doParseText_stepEntries (state, options) {
 		const ptrI = {_: state.ixToConvert};
 		const entries = EntryCoalesceRawLines.mutGetCoalesced(
@@ -126,6 +158,8 @@ export class ConverterFeat extends ConverterFeatureBase {
 	}
 
 	static _getFinalState (state, options) {
+		this._doPostProcess_removePage(state.entity, options);
+
 		this._doFeatPostProcess(state, options);
 		return PropOrder.getOrdered(state.entity, state.entity.__prop || "feat");
 	}
@@ -138,6 +172,7 @@ export class ConverterFeat extends ConverterFeatureBase {
 
 		EntryCoalesceEntryLists.mutCoalesce(state, "entries", {styleHint: options.styleHint});
 		this._doPostProcess_setPrerequisites(state, options);
+		if (state.entity.category === "G" && state.entity.name.startsWith("Boon") && state.entity.prerequisite?.some(it => it.level === 19)) state.entity.category = "EB";
 		TagJsons.mutTagObjectStrictCapsWords(state.entity, {keySet: new Set(["entries"]), styleHint: options.styleHint});
 		TagJsons.mutTagObject(state.entity, {keySet: new Set(["entries"]), isOptimistic: false, styleHint: options.styleHint});
 	}
