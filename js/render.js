@@ -1224,11 +1224,11 @@ globalThis.Renderer = class {
 	}
 
 	_getPtExpandCollapse () {
-		return `<span class="ve-rd__h-toggle ve-ml-2 ve-clickable ve-no-select no-print ve-lst-is-exporting-image__hidden" data-rd-h-toggle-button="true" title="Toggle Visibility (SHIFT to Toggle All)">[\u2212]</span>`;
+		return `<span class="ve-rd__h-toggle ve-ml-2 ve-clickable ve-no-select ve-print__hidden ve-lst-is-exporting-image__hidden" data-rd-h-toggle-button="true" title="Toggle Visibility (SHIFT to Toggle All)">[\u2212]</span>`;
 	}
 
 	_getPtExpandCollapseSpecial () {
-		return `<span class="ve-rd__h-toggle ve-ml-2 ve-clickable ve-no-select no-print ve-lst-is-exporting-image__hidden" data-rd-h-special-toggle-button="true" title="Toggle Visibility (SHIFT to Toggle All)">[\u2212]</span>`;
+		return `<span class="ve-rd__h-toggle ve-ml-2 ve-clickable ve-no-select ve-print__hidden ve-lst-is-exporting-image__hidden" data-rd-h-special-toggle-button="true" title="Toggle Visibility (SHIFT to Toggle All)">[\u2212]</span>`;
 	}
 
 	/* -------------------------------------------- */
@@ -1605,7 +1605,7 @@ globalThis.Renderer = class {
 	_renderAbilityGeneric (entry, textStack, meta, options) {
 		textStack[0] += `<div class="ve-rd__wrp-centered-ability">`;
 		if (entry.name) this._recursiveRender(entry.name, textStack, meta, {prefix: "<b>", suffix: "</b> = "});
-		if (entry.text) this._recursiveRender(entry.text, textStack, meta);
+		if (entry.entry) this._recursiveRender(entry.entry ?? entry.text, textStack, meta);
 		textStack[0] += `${entry.attributes ? ` ${Parser.attrChooseToFull(entry.attributes)}` : ""}</div>`;
 	}
 
@@ -1787,40 +1787,40 @@ globalThis.Renderer = class {
 	};
 
 	_renderStatblockInline (entry, textStack, meta, options) {
-		const fnGetRenderCompact = Renderer.hover.getFnRenderCompact(entry.dataType);
+		const fnGetRenderCompact = Renderer.hover.getFnRenderCompact(entry.statblockType);
 
-		const headerName = entry.displayName || entry.data?.name;
+		const headerName = entry.displayName || entry.statblockData?.name;
 		const headerStyle = entry.style;
 
-		const isFluff = entry.dataType?.includes("Fluff");
+		const isFluff = entry.statblockType?.includes("Fluff");
 
 		if (!fnGetRenderCompact) {
 			this._renderDataHeader(textStack, headerName, headerStyle, {isStats: !isFluff});
 			textStack[0] += `<tr>
 				<td colspan="6">
-					<i class="text-danger">Cannot render &quot;${entry.type}&quot;&mdash;unknown data type &quot;${entry.dataType}&quot;!</i>
+					<i class="text-danger">Cannot render &quot;${entry.type}&quot;&mdash;unknown statblock type &quot;${entry.statblockType}&quot;!</i>
 				</td>
 			</tr>`;
 			this._renderDataFooter(textStack);
 			return;
 		}
 
-		if (!entry.data) {
+		if (!entry.statblockData) {
 			this._renderDataHeader(textStack, headerName, headerStyle, {isStats: !isFluff});
 			textStack[0] += `<tr>
 				<td colspan="6">
-					<i class="text-danger">Entry &quot;<i><code>${JSON.stringify(entry).qq()}</code></i> did not contain required &quot;data&quot; key!</i>
+					<i class="text-danger">Entry &quot;<i><code>${JSON.stringify(entry).qq()}</code></i> did not contain required &quot;statblockData&quot; key!</i>
 				</td>
 			</tr>`;
 			this._renderDataFooter(textStack);
 			return;
 		}
 
-		const strategy = this._INLINE_STATBLOCK_STRATEGIES[entry.dataType];
+		const strategy = this._INLINE_STATBLOCK_STRATEGIES[entry.statblockType];
 
-		if (!strategy?.pFnPreProcess && !entry.data?._copy) {
+		if (!strategy?.pFnPreProcess && !entry.statblockData?._copy) {
 			this._renderDataHeader(textStack, headerName, headerStyle, {isStats: !isFluff, isCollapsed: entry.collapsed});
-			textStack[0] += fnGetRenderCompact(entry.data, {isEmbeddedEntity: true});
+			textStack[0] += fnGetRenderCompact(entry.statblockData, {isEmbeddedEntity: true});
 			this._renderDataFooter(textStack);
 			return;
 		}
@@ -1830,13 +1830,13 @@ globalThis.Renderer = class {
 		const id = CryptUtil.uid();
 		Renderer._cache.inlineStatblock[id] = {
 			pFn: async (ele) => {
-				const entLoaded = entry.data?._copy
+				const entLoaded = entry.statblockData?._copy
 					? (await DataUtil.pDoMetaMergeSingle(
-						entry.dataType,
-						{dependencies: {[entry.dataType]: entry.dependencies}},
-						entry.data,
+						entry.statblockType,
+						{dependencies: {[entry.statblockType]: entry.dependencies}},
+						entry.statblockData,
 					))
-					: entry.data;
+					: entry.statblockData;
 
 				const ent = entLoaded && strategy?.pFnPreProcess ? await strategy.pFnPreProcess(entLoaded) : entLoaded;
 
@@ -1862,20 +1862,17 @@ globalThis.Renderer = class {
 	}
 
 	_renderStatblock (entry, textStack, meta, options) {
-		const prop = entry.prop || Parser.getTagProps(entry.tag)[0];
-		const page = entry.prop || Renderer.tag.getPage(entry.tag, {isHover: true});
-		const source = Parser.getTagSource(entry.tag, entry.source);
-		const hash = entry.hash || (UrlUtil.URL_TO_HASH_BUILDER[page] ? UrlUtil.URL_TO_HASH_BUILDER[page]({...entry, source}) : null);
-		const tag = entry.tag || Parser.getPropTag(entry.prop);
-
-		const uid = prop ? DataUtil.proxy.getUid(prop, {...entry, source}, {isMaintainCase: true}) : "unknown|unknown";
-		const asTag = tag ? `{@${tag} ${uid}${entry.displayName ? `|${entry.displayName}` : ""}}` : null;
-
-		const isFluff = prop?.endsWith("Fluff");
-
-		const displayName = entry.displayName
-			|| (isFluff ? `${entry.name} (Info)` : entry.name)
-			|| entry.abbreviation;
+		const {
+			prop,
+			page,
+			source,
+			hash,
+			tag,
+			uid,
+			asTag,
+			isFluff,
+			displayName,
+		} = Renderer.utils.getStatblockEntryMeta(entry);
 
 		const fromPlugins = this._applyPlugins_useFirst(
 			"statblock_render",
@@ -2334,7 +2331,7 @@ globalThis.Renderer = class {
 
 				const fauxEntry = {
 					type: "link",
-					text: displayText,
+					entry: displayText,
 					href: {
 						type: "internal",
 						path: `${page}.html`,
@@ -2364,7 +2361,7 @@ globalThis.Renderer = class {
 						type: "external",
 						url: outUrl,
 					},
-					text: displayText,
+					entry: displayText,
 				};
 				this._recursiveRender(fauxEntry, textStack, meta);
 
@@ -2378,7 +2375,7 @@ globalThis.Renderer = class {
 						type: "internal",
 						path: page,
 					},
-					text: displayText,
+					entry: displayText,
 				};
 				if (hash) {
 					fauxEntry.hash = hash;
@@ -2396,7 +2393,7 @@ globalThis.Renderer = class {
 						type: "external",
 						url: UrlUtil.link(this.getMediaUrl("img", page)),
 					},
-					text: displayText,
+					entry: displayText,
 				};
 				this._recursiveRender(fauxEntry, textStack, meta);
 
@@ -2410,7 +2407,7 @@ globalThis.Renderer = class {
 						type: "external",
 						url: UrlUtil.link(this.getMediaUrl("audio", page)),
 					},
-					text: displayText,
+					entry: displayText,
 				};
 				this._recursiveRender(fauxEntry, textStack, meta);
 
@@ -2509,7 +2506,7 @@ globalThis.Renderer = class {
 						hash,
 						hashPreEncoded: true,
 					},
-					text: displayText,
+					entry: displayText,
 				};
 				this._recursiveRender(fauxEntry, textStack, meta);
 
@@ -2531,7 +2528,7 @@ globalThis.Renderer = class {
 							source,
 						},
 					},
-					text: (displayText || name),
+					entry: (displayText || name),
 				};
 
 				if (hashPreEncoded != null) fauxEntry.href.hashPreEncoded = hashPreEncoded;
@@ -2540,7 +2537,7 @@ globalThis.Renderer = class {
 				if (hashHover != null) fauxEntry.href.hover.hash = hashHover;
 				if (hashPreEncodedHover != null) fauxEntry.href.hover.hashPreEncoded = hashPreEncodedHover;
 				if (preloadId != null) fauxEntry.href.hover.preloadId = preloadId;
-				if (linkText) fauxEntry.text = linkText;
+				if (linkText) fauxEntry.entry = linkText;
 				if (subhashes) fauxEntry.href.subhashes = subhashes;
 				if (subhashesHover) fauxEntry.href.hover.subhashes = subhashesHover;
 				if (isAllowRedirect) fauxEntry.href.hover.isAllowRedirect = isAllowRedirect;
@@ -2599,11 +2596,11 @@ globalThis.Renderer = class {
 		const additionalAttributes = pluginData.map(it => it.attributes).filter(Boolean);
 
 		if (this._isInternalLinksDisabled && entry.href.type === "internal") {
-			textStack[0] += `<span class="ve-bold" ${isDisableEvents ? "" : this._renderLink_getHoverString(entry)} ${additionalAttributes.join(" ")}>${this.render(entry.text)}</span>`;
+			textStack[0] += `<span class="ve-bold" ${isDisableEvents ? "" : this._renderLink_getHoverString(entry)} ${additionalAttributes.join(" ")}>${this.render(entry.entry)}</span>`;
 		} else if (entry.href.hover?.isFauxPage) {
-			textStack[0] += `<span class="ve-help ve-help--hover" ${isDisableEvents ? "" : this._renderLink_getHoverString(entry)} ${additionalAttributes.join(" ")}>${this.render(entry.text)}</span>`;
+			textStack[0] += `<span class="ve-help ve-help--hover" ${isDisableEvents ? "" : this._renderLink_getHoverString(entry)} ${additionalAttributes.join(" ")}>${this.render(entry.entry)}</span>`;
 		} else {
-			textStack[0] += `<a href="${href.qq()}" ${entry.href.type === "internal" ? "" : `target="_blank" rel="noopener noreferrer"`} ${isDisableEvents ? "" : this._renderLink_getHoverString(entry)} ${additionalAttributes.join(" ")}>${this.render(entry.text)}</a>`;
+			textStack[0] += `<a href="${href.qq()}" ${entry.href.type === "internal" ? "" : `target="_blank" rel="noopener noreferrer"`} ${isDisableEvents ? "" : this._renderLink_getHoverString(entry)} ${additionalAttributes.join(" ")}>${this.render(entry.entry)}</a>`;
 		}
 	}
 
@@ -2719,6 +2716,8 @@ Renderer.get = () => {
  *   but a property injector *is* valid inside a tag.
  */
 Renderer.applyProperties = function (entry, object) {
+	if (!entry.includes("{=")) return entry;
+
 	const propSplit = Renderer.splitByTags(entry);
 	const len = propSplit.length;
 
@@ -2787,16 +2786,25 @@ Renderer.applyProperties._OP_ORDER = [
 ];
 
 Renderer.applyAllProperties = function (entries, object = null) {
+	Renderer.applyAllProperties._WALKER ||= MiscUtil.getWalker();
+
+	if (object) {
+		return Renderer.applyAllProperties._WALKER.walk(
+			entries,
+			{string: str => Renderer.applyProperties(str, object)},
+		);
+	}
+
 	let lastObj = null;
-	const handlers = {
-		object: (obj) => {
-			lastObj = obj;
-			return obj;
+	return Renderer.applyAllProperties._WALKER.walk(
+		entries,
+		{
+			object: (obj) => lastObj = obj,
+			string: (str) => Renderer.applyProperties(str, lastObj),
 		},
-		string: (str) => Renderer.applyProperties(str, object || lastObj),
-	};
-	return MiscUtil.getWalker().walk(entries, handlers);
+	);
 };
+Renderer.applyAllProperties._WALKER = null;
 
 Renderer.attackTagToFull = function (tagStr, {isRoll = false} = {}) {
 	function renderTag (tags) {
@@ -3435,7 +3443,7 @@ Renderer.utils = class {
 	}
 
 	static getBtnSendToFoundryHtml ({isMb = true} = {}) {
-		return `<button title="Send to Foundry (SHIFT for Temporary Import)" class="no-print ve-btn ve-btn-xs ve-btn-default ve-stats__btn-stats-name ve-mx-2 ${isMb ? "ve-mb-2" : ""} ve-self-flex-end ve-lst-is-exporting-image__hidden" onclick="ExtensionUtil.pDoSendStats(event, this)" draggable="true" ondragstart="ExtensionUtil.doDragStart(event, this)"><span class="glyphicon glyphicon-send"></span></button>`;
+		return `<button title="Send to Foundry (SHIFT for Temporary Import)" class="ve-print__hidden ve-btn ve-btn-xs ve-btn-default ve-stats__btn-stats-name ve-mx-2 ${isMb ? "ve-mb-2" : ""} ve-self-flex-end ve-lst-is-exporting-image__hidden" onclick="ExtensionUtil.pDoSendStats(event, this)" draggable="true" ondragstart="ExtensionUtil.doDragStart(event, this)"><span class="glyphicon glyphicon-send"></span></button>`;
 	}
 
 	static isDisplayPage (page) { return page != null && ((!isNaN(page) && page > 0) || isNaN(page)); }
@@ -3550,6 +3558,35 @@ Renderer.utils = class {
 	}
 
 	/* -------------------------------------------- */
+
+	static getStatblockEntryMeta (entry) {
+		const prop = entry.prop || Parser.getTagProps(entry.tag)[0];
+		const tag = entry.tag || Parser.getPropTag(entry.prop);
+		const page = Renderer.tag.getPage(tag, {isHover: true}) || entry.prop;
+		const source = Parser.getTagSource(tag, entry.source);
+		const hash = entry.hash || UrlUtil.getHashBuilder(prop)?.({...entry, source});
+
+		const uid = prop ? DataUtil.proxy.getUid(prop, {...entry, source}, {isMaintainCase: true}) : "unknown|unknown";
+		const asTag = tag ? `{@${tag} ${uid}${entry.displayName ? `|${entry.displayName}` : ""}}` : null;
+
+		const isFluff = prop?.endsWith("Fluff");
+
+		const displayName = entry.displayName
+			|| (isFluff ? `${entry.name} (Info)` : entry.name)
+			|| entry.abbreviation;
+
+		return {
+			prop,
+			page,
+			source,
+			hash,
+			tag,
+			uid,
+			asTag,
+			isFluff,
+			displayName,
+		};
+	}
 
 	static embed = class {
 		static _isDisableFixedHeightInitial = false;
@@ -3696,7 +3733,6 @@ Renderer.utils = class {
 			</div>`;
 		}
 	};
-	// endregion
 
 	/* -------------------------------------------- */
 
@@ -5023,6 +5059,21 @@ Renderer.utils = class {
 				};
 			}
 
+			case "@subclassFluff": {
+				const unpacked = DataUtil.subclassFluff.unpackUid(text);
+
+				return {
+					name: unpacked.name,
+					displayText: unpacked.displayText,
+
+					isFauxPage: true,
+					page: "subclassFluff",
+					source: unpacked.source,
+					hash: UrlUtil.URL_TO_HASH_BUILDER["subclassFluff"](unpacked),
+					hashPreEncoded: true,
+				};
+			}
+
 			case "@classFeature": {
 				const unpacked = DataUtil.class.unpackUidClassFeature(text);
 
@@ -5232,8 +5283,13 @@ Renderer.utils = class {
 			case "@cite": { out.isFauxPage = true; out.page = "citation"; break; }
 
 			// TODO(Future) revise/expand
+			case "@backgroundFluff": { out.isFauxPage = true; out.page = "backgroundFluff"; break; }
+			case "@classFluff": { out.isFauxPage = true; out.page = "classFluff"; break; }
 			case "@creatureFluff": { out.isFauxPage = true; out.page = "monsterFluff"; break; }
+			case "@itemFluff": { out.isFauxPage = true; out.page = "itemFluff"; break; }
 			case "@raceFluff": { out.isFauxPage = true; out.page = "raceFluff"; break; }
+			case "@recipeFluff": { out.isFauxPage = true; out.page = "recipeFluff"; break; }
+			case "@spellFluff": { out.isFauxPage = true; out.page = "spellFluff"; break; }
 			case "@crochetFluff": { out.isFauxPage = true; out.page = "crochetPatternFluff"; break; }
 
 			default: throw new Error(`Unhandled tag "${tag}"`);
@@ -5546,6 +5602,60 @@ Renderer.utils = class {
 		handleLoad_imgMinimizeLayoutShift (ele) {
 			Renderer.utils.lazy.mutFinalizeEle(ele);
 		},
+	};
+
+	static preload = class {
+		static async _pMutPreloadInline (obj) {
+			if (obj.statblockData._copy) {
+				obj.statblockData = await DataUtil.pDoMetaMergeSingle(
+					obj.statblockType,
+					{dependencies: {[obj.statblockType]: obj.dependencies}},
+					obj.statblockData,
+				);
+			}
+
+			if (obj.statblockType === "item") {
+				await Renderer.item.pPopulatePropertyAndTypeReference();
+				Renderer.item.enhanceItem(obj.statblockData);
+			}
+
+			if (obj.displayName) obj.statblockData._displayName = obj.displayName;
+		}
+
+		static async _pMutPreload (data, {depth = 0} = {}) {
+			if (depth > 99) throw new Error(`Hit depth limit when attempting to preload entries! This suggests a cycle in the data.`);
+
+			const objsToProcess = [];
+
+			MiscUtil.getWalker({isNoModification: true, keyBlocklist: new Set(["statblockData"])}).walk(data, {object: obj => {
+				if (obj.type === "statblock" || (obj.type === "statblockInline" && obj.statblockData)) objsToProcess.push(obj);
+			}});
+
+			await objsToProcess.pSerialAwaitMap(async obj => {
+				if (obj.type === "statblock") {
+					const {prop, page, source, hash} = Renderer.utils.getStatblockEntryMeta(obj);
+					if (!page || !source || !hash) return;
+
+					const ent = await DataLoader.pCacheAndGet(page, source, hash);
+					if (!ent) return;
+
+					Object.assign(obj, {
+						type: "statblockInline",
+						statblockType: ent.__prop || prop,
+						statblockData: MiscUtil.copyFast(ent),
+					});
+				}
+
+				await this._pMutPreloadInline(obj);
+				await this._pMutPreload(obj.statblockData, {depth: depth + 1});
+			});
+		}
+
+		static async pGetPreloaded (data) {
+			const cpy = MiscUtil.copyFast(data);
+			await this._pMutPreload(cpy);
+			return cpy;
+		}
 	};
 };
 
@@ -6026,6 +6136,12 @@ Renderer.tag = class {
 		page = UrlUtil.PG_BACKGROUNDS;
 	};
 
+	static TagBackgroundFluff = class extends this._TagPipedDisplayTextThird {
+		tagName = "backgroundFluff";
+		defaultSource = Parser.SRC_PHB;
+		page = "backgroundFluff";
+	};
+
 	static TagBoon = class extends this._TagPipedDisplayTextThird {
 		tagName = "boon";
 		defaultSource = Parser.SRC_MTF;
@@ -6042,6 +6158,12 @@ Renderer.tag = class {
 		tagName = "class";
 		defaultSource = Parser.SRC_PHB;
 		page = UrlUtil.PG_CLASSES;
+	};
+
+	static TagClassFluff = class extends this._TagPipedDisplayTextThird {
+		tagName = "classFluff";
+		defaultSource = Parser.SRC_PHB;
+		page = "classFluff";
 	};
 
 	static TagCondition = class extends this._TagPipedDisplayTextThird {
@@ -6104,6 +6226,12 @@ Renderer.tag = class {
 		page = UrlUtil.PG_ITEMS;
 	};
 
+	static TagItemFluff = class extends this._TagPipedDisplayTextThird {
+		tagName = "itemFluff";
+		defaultSource = Parser.SRC_DMG;
+		page = "itemFluff";
+	};
+
 	static TagItemProperty = class extends this._TagPipedDisplayTextThird {
 		tagName = "itemProperty";
 		defaultSource = Parser.SRC_PHB;
@@ -6164,6 +6292,12 @@ Renderer.tag = class {
 		page = UrlUtil.PG_RECIPES;
 	};
 
+	static TagRecipeFluff = class extends this._TagPipedDisplayTextThird {
+		tagName = "recipeFluff";
+		defaultSource = Parser.SRC_HF;
+		page = "recipeFluff";
+	};
+
 	static TagCrochet = class extends this._TagPipedDisplayTextThird {
 		tagName = "crochet";
 		defaultSource = Parser.SRC_CaBoMP;
@@ -6173,7 +6307,7 @@ Renderer.tag = class {
 	static TagCrochetFluff = class extends this._TagPipedDisplayTextThird {
 		tagName = "crochetFluff";
 		defaultSource = Parser.SRC_CaBoMP;
-		page = "crochetFluff";
+		page = "crochetPatternFluff";
 	};
 
 	static TagReward = class extends this._TagPipedDisplayTextThird {
@@ -6210,6 +6344,12 @@ Renderer.tag = class {
 		tagName = "spell";
 		defaultSource = Parser.SRC_PHB;
 		page = UrlUtil.PG_SPELLS;
+	};
+
+	static TagSpellFluff = class extends this._TagPipedDisplayTextThird {
+		tagName = "spellFluff";
+		defaultSource = Parser.SRC_PHB;
+		page = "spellFluff";
 	};
 
 	static TagStatus = class extends this._TagPipedDisplayTextThird {
@@ -6275,6 +6415,12 @@ Renderer.tag = class {
 		pageHover = "subclass";
 	};
 
+	static TagSubclassFluff = class extends this._TagPipedDisplayTextFifth {
+		tagName = "subclassFluff";
+		defaultSource = Parser.SRC_PHB;
+		page = "subclassFluff";
+	};
+
 	static _TagPipedDisplayTextSixth = class extends this._TagBaseAt {
 		_getStripped (tag, text) {
 			const parts = Renderer.splitTagByPipe(text);
@@ -6286,6 +6432,7 @@ Renderer.tag = class {
 		tagName = "classFeature";
 		defaultSource = Parser.SRC_PHB;
 		page = UrlUtil.PG_CLASSES;
+		pageHover = "classFeature";
 	};
 
 	static _TagPipedDisplayTextEight = class extends this._TagBaseAt {
@@ -6299,6 +6446,7 @@ Renderer.tag = class {
 		tagName = "subclassFeature";
 		defaultSource = Parser.SRC_PHB;
 		page = UrlUtil.PG_CLASSES;
+		pageHover = "subclassFeature";
 	};
 
 	static TagQuickref = class extends this._TagBaseAt {
@@ -6453,9 +6601,11 @@ Renderer.tag = class {
 
 		new this.TagAction(),
 		new this.TagBackground(),
+		new this.TagBackgroundFluff(),
 		new this.TagBoon(),
 		new this.TagCharoption(),
 		new this.TagClass(),
+		new this.TagClassFluff(),
 		new this.TagCondition(),
 		new this.TagCreature(),
 		new this.TagCreatureFluff(),
@@ -6466,6 +6616,7 @@ Renderer.tag = class {
 		new this.TagFeat(),
 		new this.TagHazard(),
 		new this.TagItem(),
+		new this.TagItemFluff(),
 		new this.TagItemProperty(),
 		new this.TagItemMastery(),
 		new this.TagLanguage(),
@@ -6476,6 +6627,7 @@ Renderer.tag = class {
 		new this.TagRace(),
 		new this.TagRaceFluff(),
 		new this.TagRecipe(),
+		new this.TagRecipeFluff(),
 		new this.TagCrochet(),
 		new this.TagCrochetFluff(),
 		new this.TagReward(),
@@ -6484,6 +6636,7 @@ Renderer.tag = class {
 		new this.TagSense(),
 		new this.TagSkill(),
 		new this.TagSpell(),
+		new this.TagSpellFluff(),
 		new this.TagStatus(),
 		new this.TagTable(),
 		new this.TagTrap(),
@@ -6494,6 +6647,7 @@ Renderer.tag = class {
 		new this.TagDeity(),
 
 		new this.TagSubclass(),
+		new this.TagSubclassFluff(),
 
 		new this.TagClassFeature(),
 
@@ -6774,11 +6928,11 @@ Renderer.events = class {
 		return {
 			htmlNameCollapsed: Renderer.get().render({
 				...fauxEntryBase,
-				text: displayText || name,
+				entry: displayText || name,
 			}),
 			htmlNameExpanded: Renderer.get().render({
 				...fauxEntryBase,
-				text: `<button class="ve-btn ve-btn-default ve-btn-xxs" title="Go to Page">
+				entry: `<button class="ve-btn ve-btn-default ve-btn-xxs" title="Go to Page">
 					<span class="glyphicon glyphicon-modal-window"></span>
 				</button>`,
 			}),
@@ -7724,7 +7878,7 @@ Renderer.class = class {
 
 	static pGetFluff (cls) {
 		// Handle legacy/deprecated class fluff
-		// TODO(Future) remove this after ~July 2024
+		// TODO(Future) now explicitly removed from the schema; remove this after ~April 2027
 		if (cls.fluff instanceof Array) {
 			cls = {...cls};
 			cls.fluff = {entries: cls.fluff};
@@ -9814,15 +9968,15 @@ Renderer.cultboon = class {
 	/* -------------------------------------------- */
 
 	static getBoonRenderableEntriesMeta (ent) {
-		if (!ent.ability && !ent.signatureSpells) return null;
+		if (!ent.abilityEntry && !ent.signatureSpells) return null;
 
 		const benefits = {type: "list", style: "list-hang-notitle", items: []};
 
-		if (ent.ability) {
+		if (ent.abilityEntry) {
 			benefits.items.push({
 				type: "item",
 				name: "Ability Score Adjustment:",
-				entry: ent.ability ? ent.ability.entry : "None",
+				entry: ent.abilityEntry,
 			});
 		}
 
@@ -10065,12 +10219,12 @@ class _RenderCompactBestiaryImplBase {
 			return `<td colspan="2">
 				${Renderer.monster.getChallengeRatingPart(mon, {styleHint: this._style})}
 				${opts.isShowScalers && !opts.isScaledCr && Parser.isValidCr(mon.cr ? (mon.cr.cr || mon.cr) : null) ? `
-				<button title="Scale Creature By CR (Highly Experimental)" class="mon__btn-scale-cr ve-btn ve-btn-xs ve-btn-default no-print">
+				<button title="Scale Creature By CR (Highly Experimental; based on the &quot;Monster Statistics by Challenge Rating&quot; table in the Dungeon Master's Guide (2014), page 274)" class="mon__btn-scale-cr ve-btn ve-btn-xs ve-btn-default ve-print__hidden">
 					<span class="glyphicon glyphicon-signal"></span>
 				</button>
 				` : ""}
 				${opts.isScaledCr ? `
-				<button title="Reset CR Scaling" class="mon__btn-reset-cr ve-btn ve-btn-xs ve-btn-default no-print">
+				<button title="Reset CR Scaling" class="mon__btn-reset-cr ve-btn ve-btn-xs ve-btn-default ve-print__hidden">
 					<span class="glyphicon glyphicon-refresh"></span>
 				</button>
 				` : ""}
@@ -10964,7 +11118,7 @@ Renderer.monster = class {
 
 		return veE({
 			tag: "select",
-			clazz: "ve-input-xs ve-form-control form-control--minimal ve-w-initial ve-inline-block ve-popwindow__hidden no-print",
+			clazz: "ve-input-xs ve-form-control form-control--minimal ve-w-initial ve-inline-block ve-popwindow__hidden ve-print__hidden",
 			name: "mon__sel-summon-spell-level",
 			children: [
 				veE({tag: "option", val: "-1", txt: "\u2014"}),
@@ -10982,7 +11136,7 @@ Renderer.monster = class {
 
 		return veE({
 			tag: "select",
-			clazz: "ve-input-xs ve-form-control form-control--minimal ve-w-initial ve-inline-block ve-popwindow__hidden no-print",
+			clazz: "ve-input-xs ve-form-control form-control--minimal ve-w-initial ve-inline-block ve-popwindow__hidden ve-print__hidden",
 			name: "mon__sel-summon-class-level",
 			children: [
 				veE({tag: "option", val: "-1", txt: "\u2014"}),
@@ -12921,6 +13075,8 @@ Renderer.item = class {
 		Renderer.utils.initFullEntries_(item, {propEntries: "additionalEntries", propFullEntries: "_fullAdditionalEntries"});
 	}
 
+	/* -------------------------------------------- */
+
 	/**
 	 * @param baseItems
 	 * @param genericVariants
@@ -12950,6 +13106,8 @@ Renderer.item = class {
 		});
 		return genericAndSpecificVariants;
 	}
+
+	/* ----- */
 
 	/**
 	 * When creating specific variants, the application of "classic" and "one" editions
@@ -12985,35 +13143,62 @@ Renderer.item = class {
 		throw new Error(`Unhandled edition combination "${curBaseItem.edition}"/"${curGenericVariant.edition}" for base item "${curBaseItem.name}" and generic variant "${curGenericVariant.name}"!`);
 	}
 
+	/* ----- */
+
+	static _createSpecificVariants_isRequiresExcludesMatch_isMatching ({candidateVal, requirement, isEvery}) {
+		if (requirement instanceof Array) {
+			return candidateVal instanceof Array
+				? candidateVal.some(it => requirement.includes(it))
+				: requirement.includes(candidateVal);
+		}
+
+		// Recurse for e.g. `"customProperties": { ... }`
+		if (requirement != null && typeof requirement === "object") {
+			return this._createSpecificVariants_isRequiresExcludesMatch({
+				candidate: candidateVal,
+				requirements: requirement,
+				isEvery,
+			});
+		}
+
+		return candidateVal instanceof Array
+			? candidateVal.some(val => val === requirement)
+			: requirement === candidateVal;
+	}
+
+	static _createSpecificVariants_isRequiresExcludesMatch ({candidate, requirements, isEvery = false}) {
+		if (candidate == null || requirements == null) return false;
+
+		for (const reqKey in requirements) {
+			const isMatch = this._createSpecificVariants_isRequiresExcludesMatch_isMatching({
+				candidateVal: candidate[reqKey],
+				requirement: requirements[reqKey],
+				isEvery,
+			});
+
+			if (isEvery && !isMatch) return false;
+			if (!isEvery && isMatch) return true;
+		}
+
+		return isEvery;
+	}
+
 	static _createSpecificVariants_hasRequiredProperty (baseItem, genericVariant) {
-		return genericVariant.requires.some(req => Renderer.item._createSpecificVariants_isRequiresExcludesMatch(baseItem, req, "every"));
+		return genericVariant.requires.some(requirements => Renderer.item._createSpecificVariants_isRequiresExcludesMatch({
+			candidate: baseItem,
+			requirements,
+			isEvery: true,
+		}));
 	}
 
 	static _createSpecificVariants_hasExcludedProperty (baseItem, genericVariant) {
-		const curExcludes = genericVariant.excludes || {};
-		return Renderer.item._createSpecificVariants_isRequiresExcludesMatch(baseItem, genericVariant.excludes, "some");
-	}
-
-	static _createSpecificVariants_isRequiresExcludesMatch (candidate, requirements, method) {
-		if (candidate == null || requirements == null) return false;
-
-		return Object.entries(requirements)[method](([reqKey, reqVal]) => {
-			if (reqVal instanceof Array) {
-				return candidate[reqKey] instanceof Array
-					? candidate[reqKey].some(it => reqVal.includes(it))
-					: reqVal.includes(candidate[reqKey]);
-			}
-
-			// Recurse for e.g. `"customProperties": { ... }`
-			if (reqVal != null && typeof reqVal === "object") {
-				return Renderer.item._createSpecificVariants_isRequiresExcludesMatch(candidate[reqKey], reqVal, method);
-			}
-
-			return candidate[reqKey] instanceof Array
-				? candidate[reqKey].some(it => reqVal === it)
-				: reqVal === candidate[reqKey];
+		return Renderer.item._createSpecificVariants_isRequiresExcludesMatch({
+			candidate: baseItem,
+			requirements: genericVariant.excludes,
 		});
 	}
+
+	/* ----- */
 
 	/**
 	 * @param baseItem
@@ -15101,7 +15286,8 @@ Renderer.recipe = class {
 		if (ent.equipment) ent._fullEquipment = Renderer.applyAllProperties(MiscUtil.copyFast(ent.equipment));
 	}
 
-	static _RE_AMOUNT = /(?<tagAmount>{=amount\d+(?:\/[^}]+)?})/g;
+	static _RE_AMOUNT_SPLITTER = /(?<tagAmount>{=amount\d+(?:\/[^}]+)?})/g;
+	static _RE_AMOUNT = /(?<tagAmount>{=(?<propAmount>amount\d+)(?:\/[^}]+)?})/;
 	static _SCALED_PRECISION_LIMIT = 10 ** 6;
 	static getScaledRecipe (r, scaleFactor) {
 		const cpyR = MiscUtil.copyFast(r);
@@ -15133,28 +15319,26 @@ Renderer.recipe = class {
 								});
 
 							// region Attempt to singularize/pluralize units
-							const amountsOriginal = Object.keys(objOriginal).filter(k => /^amount\d+$/.test(k)).map(k => objOriginal[k]);
-							const amountsScaled = Object.keys(obj).filter(k => /^amount\d+$/.test(k)).map(k => obj[k]);
-
-							const entryParts = obj.entry.split(Renderer.recipe._RE_AMOUNT).filter(Boolean);
+							const entryParts = obj.entry.split(Renderer.recipe._RE_AMOUNT_SPLITTER).filter(Boolean);
 							const entryPartsOut = entryParts.slice(0, entryParts.findIndex(it => Renderer.recipe._RE_AMOUNT.test(it)) + 1);
-							let ixAmount = 0;
+							let propAmount = null;
 							for (let i = entryPartsOut.length; i < entryParts.length; ++i) {
 								let pt = entryParts[i];
 
-								if (Renderer.recipe._RE_AMOUNT.test(pt)) {
-									ixAmount++;
+								const mAmount = Renderer.recipe._RE_AMOUNT.exec(pt);
+								if (mAmount) {
+									propAmount = mAmount.groups.propAmount;
 									entryPartsOut.push(pt);
 									continue;
 								}
 
-								if (amountsOriginal[ixAmount] == null || amountsScaled[ixAmount] == null) {
+								if (objOriginal[propAmount] == null || obj[propAmount] == null) {
 									entryPartsOut.push(pt);
 									continue;
 								}
 
-								const isSingleToPlural = amountsOriginal[ixAmount] <= 1 && amountsScaled[ixAmount] > 1;
-								const isPluralToSingle = amountsOriginal[ixAmount] > 1 && amountsScaled[ixAmount] <= 1;
+								const isSingleToPlural = objOriginal[propAmount] <= 1 && obj[propAmount] > 1;
+								const isPluralToSingle = objOriginal[propAmount] > 1 && obj[propAmount] <= 1;
 
 								if (!isSingleToPlural && !isPluralToSingle) {
 									entryPartsOut.push(pt);
@@ -15193,6 +15377,7 @@ Renderer.recipe = class {
 
 	static _UNITS_SINGLE_TO_PLURAL_S = [
 		"bag",
+		"ball",
 		"bundle",
 		"can",
 		"cube",
@@ -15202,6 +15387,7 @@ Renderer.recipe = class {
 		"ounce",
 		"packet",
 		"piece",
+		"pint",
 		"pod",
 		"pound",
 		"sheet",
@@ -15280,8 +15466,10 @@ Renderer.recipe = class {
 		if (stack) parts.push(stack);
 		obj.entry = parts
 			.map(pt => pt.replace(Renderer.recipe._RE_AMOUNT, (...m) => {
-				const ixStart = m.slice(-3, -2)[0];
-				if (ixStart !== 0 || m[0].length !== pt.length) return m[0];
+				if (m[0].length !== pt.length) return m[0];
+
+				const propAmount = m.at(-1).propAmount;
+				if (obj[propAmount] === objOriginal[propAmount]) return m[0];
 
 				const originalValue = Renderer.applyProperties(m.last().tagAmount, objOriginal);
 				return `{@help ${m.last().tagAmount}|In the original recipe: ${originalValue}}`;
@@ -15481,24 +15669,30 @@ Renderer.card = class {
 };
 
 Renderer.deck = class {
-	static getCompactRenderedString (ent) {
-		const lstCards = {
-			name: "Cards",
-			entries: [
-				{
-					type: "list",
-					columns: 3,
-					items: ent.cards.map(card => `{@card ${card.name}|${card.set}|${card.source}}`),
-				},
-			],
+	static getDeckRenderableEntriesMeta (ent) {
+		return {
+			entryCards: {
+				name: "Cards",
+				entries: [
+					{
+						type: "list",
+						columns: 3,
+						items: (ent.cards || []).map(card => `{@card ${card.name}|${card.set}|${card.source}}`),
+					},
+				],
+			},
 		};
+	}
+
+	static getCompactRenderedString (ent) {
+		const {entryCards} = this.getDeckRenderableEntriesMeta(ent);
 
 		return `
 			${Renderer.utils.getNameTr(ent)}
 			<tr><td colspan="6" class="ve-pb-2">
 			${Renderer.get().setFirstSection(true).render({type: "entries", entries: ent.entries}, 1)}
 			<hr class="ve-hr-3">
-			${Renderer.get().setFirstSection(true).render(lstCards, 1)}
+			${Renderer.get().setFirstSection(true).render(entryCards, 1)}
 			</td></tr>
 		`;
 	}
@@ -15667,11 +15861,19 @@ Renderer.bastion = class {
 };
 
 Renderer.skill = class {
+	static getSkillRenderableEntriesMeta (ent) {
+		return {
+			entryAbility: ent.ability ? `{@i Ability: ${Parser.attAbvToFull(ent.ability)}}` : null,
+		};
+	}
+
 	static getCompactRenderedString (ent) {
+		const {entryAbility} = this.getSkillRenderableEntriesMeta(ent);
+
 		return `
 			${Renderer.utils.getNameTr(ent)}
 			<tr><td colspan="6" class="ve-pb-2">
-			${ent.ability ? `<p><i>Ability: ${Parser.attAbvToFull(ent.ability)}</i></p>` : ""}
+			${entryAbility ? `<p>${Renderer.get().render(entryAbility)}</p>` : ""}
 			${Renderer.get().setFirstSection(true).render({type: "entries", entries: ent.entries})}
 			</td></tr>
 			${Renderer.utils.getPageTr(ent)}
@@ -15686,9 +15888,10 @@ Renderer.sense = class {
 };
 
 Renderer.itemProperty = class {
-	static getCompactRenderedString (ent) {
+	static getItemPropertyRenderableEntriesMeta (ent) {
 		const faux = {
-			name: ent.name || (ent.entries || ent.entriesTemplate)[0]?.name || "Unknown",
+			...ent,
+			name: ent.name || (ent.entries || ent.entriesTemplate || [])[0]?.name || "Unknown",
 			source: ent.source,
 		};
 
@@ -15714,7 +15917,14 @@ Renderer.itemProperty = class {
 			);
 		} else faux.entries = [];
 
-		return Renderer.generic.getCompactRenderedString(faux, {isSkipPageRow: true});
+		return {
+			entryFaux: faux,
+		};
+	}
+
+	static getCompactRenderedString (ent) {
+		const {entryFaux} = this.getItemPropertyRenderableEntriesMeta(ent);
+		return Renderer.generic.getCompactRenderedString(entryFaux, {isSkipPageRow: true});
 	}
 };
 
@@ -16177,11 +16387,33 @@ Renderer.redirect = class {
 
 Renderer.hover = class {
 	static LinkMeta = class {
-		constructor () {
-			this.isHovered = false;
+		constructor ({mode = "hover"}) {
+			this.mode = mode;
+
+			this.doReset();
+		}
+
+		doReset () {
+			this.isAttended = false;
+
 			this.isLoading = false;
+			this.isDelayed = false;
 			this.isPermanent = false;
+
 			this.windowMeta = null;
+
+			this._tmpEvt = null;
+		}
+
+		isHeldOpen ({mode = null} = {}) {
+			if (mode != null && this.mode !== mode) return false;
+			return this.isAttended || this.isPermanent;
+		}
+
+		getPopTempEvt ({evtDefault = null} = {}) {
+			const evt = this._tmpEvt || evtDefault;
+			this._tmpEvt = null;
+			return evt;
 		}
 	};
 
@@ -16236,6 +16468,8 @@ Renderer.hover = class {
 		]);
 	}
 
+	/* -------------------------------------------- */
+
 	static cleanTempWindows () {
 		for (const [key, meta] of Renderer.hover._eleCache.entries()) {
 			// If this is an element-less "permanent" show (i.e. a "predefined" window) which has been closed
@@ -16250,7 +16484,9 @@ Renderer.hover = class {
 				continue;
 			}
 
-			if (!meta.isPermanent && meta.isHovered && meta.windowMeta) {
+			if (meta.mode !== "hover") continue;
+
+			if (!meta.isPermanent && meta.isAttended && meta.windowMeta) {
 				// Check if any elements have failed to clear their hovering status on mouse move
 				const bounds = key.getBoundingClientRect();
 				if (EventUtil._mouseX < bounds.x
@@ -16263,29 +16499,41 @@ Renderer.hover = class {
 		}
 	}
 
+	/* -------------------------------------------- */
+
 	static _doCloseAllWindows ({hoverIdBlocklist = null} = {}) {
 		Object.entries(Renderer.hover._WINDOW_METAS)
 			.filter(([hoverId, meta]) => hoverIdBlocklist == null || !hoverIdBlocklist.has(Number(hoverId)))
 			.forEach(([, meta]) => meta.doClose());
 	}
 
-	static _getSetMeta (key) {
-		if (!Renderer.hover._eleCache.has(key)) Renderer.hover._eleCache.set(key, new Renderer.hover.LinkMeta());
+	/* -------------------------------------------- */
+
+	static _getSetMeta ({key, mode}) {
+		if (!Renderer.hover._eleCache.has(key)) Renderer.hover._eleCache.set(key, new Renderer.hover.LinkMeta({mode}));
 		return Renderer.hover._eleCache.get(key);
 	}
 
-	static _handleGenericMouseOverStart ({evt, ele, opts}) {
+	static _handleGenericShowStart ({ele, mode, isPermanent = false}) {
 		Renderer.hover.cleanTempWindows();
 
-		const meta = Renderer.hover._getSetMeta(ele);
-		if (meta.isHovered || meta.isLoading) return; // Another hover is already in progress
+		const meta = Renderer.hover._getSetMeta({key: ele, mode});
+
+		// Another handler has this element
+		if (meta.isHeldOpen()) return null;
+		if (meta.isLoading && meta.mode !== mode) return null;
+
+		meta.mode = mode;
+		meta.isAttended = true;
+
+		// (Re-entering refreshes attendance without starting another load)
+		if (meta.isLoading) return null;
+
+		meta.isLoading = true;
+		meta.isPermanent ||= isPermanent;
 
 		// Set the cursor to a waiting spinner
 		ele.style.cursor = "progress";
-
-		meta.isHovered = true;
-		meta.isLoading = true;
-		meta.isPermanent = evt.shiftKey || opts?.isForceOpenPermanent || false;
 
 		return meta;
 	}
@@ -16293,7 +16541,7 @@ Renderer.hover = class {
 	static _doPredefinedShowStart ({entryId}) {
 		Renderer.hover.cleanTempWindows();
 
-		const meta = Renderer.hover._getSetMeta(entryId);
+		const meta = Renderer.hover._getSetMeta({key: entryId});
 
 		meta.isPermanent = true;
 
@@ -16342,22 +16590,99 @@ Renderer.hover = class {
 
 	// (Baked into render strings)
 	static async pHandleLinkMouseOver (evt, ele, opts) {
-		Renderer.hover._doInit();
+		this._doInit();
 
-		const linkData = Renderer.hover._pHandleLinkMouseOver_getLinkData({ele, opts});
-		let {page, source, hash} = linkData;
-		const {preloadId, customHashId, isFauxPage, isAllowRedirect} = linkData;
-
-		const redirectMeta = await this._pHandleLinkMouseOver_pGetVersionRedirectMeta({page, source, hash, preloadId, customHashId, isAllowRedirect});
-		if (redirectMeta != null) ({page, source, hash} = redirectMeta);
-
-		let meta = Renderer.hover._handleGenericMouseOverStart({evt, ele, opts});
+		const meta = this._handleGenericShowStart({
+			ele,
+			mode: "hover",
+			isPermanent: !!evt.shiftKey || !!opts?.isForceOpenPermanent,
+		});
 		if (meta == null) return;
 
-		if (EventUtil.isCtrlMetaKey(evt)) meta.isFluff = true;
+		const contentInfo = await this._pGetLinkContentInfo({
+			ele,
+			opts,
+			isFluff: EventUtil.isCtrlMetaKey(evt),
+		});
+		meta.isLoading = false;
 
-		let toRender;
-		if (preloadId != null) { // FIXME(Future) remove in favor of `customHashId`
+		if (opts?.isDelay) {
+			meta.isDelayed = true;
+			ele.style.cursor = "help";
+			await MiscUtil.pDelay(1100);
+			meta.isDelayed = false;
+		}
+
+		ele.style.cursor = "";
+
+		if (!meta.isHeldOpen({mode: "hover"})) return;
+
+		const position = this.getWindowPositionFromEvent(meta.getPopTempEvt({evtDefault: evt}), {isPreventFlicker: !meta.isPermanent});
+
+		this._doShowContent({
+			meta,
+			contentInfo,
+			position,
+			win: evt.view?.window,
+		});
+	}
+
+	static _pHandleLinkFocus_isActiveFocus ({ele}) {
+		return ele.ownerDocument.activeElement === ele;
+	}
+
+	static async pHandleLinkFocus (evt, ele, opts) {
+		this._doInit();
+
+		const meta = this._handleGenericShowStart({
+			ele,
+			mode: "focus",
+		});
+		if (meta == null) return;
+
+		const contentInfo = await this._pGetLinkContentInfo({
+			ele,
+			opts,
+			isFluff: false,
+		});
+		meta.isLoading = false;
+
+		ele.style.cursor = "";
+
+		if (!this._pHandleLinkFocus_isActiveFocus({ele})) return;
+
+		if (!meta.isHeldOpen({mode: "focus"})) return;
+
+		const {left, top} = ele.getBoundingClientRect();
+		const position = opts?.position ?? this.getWindowPositionExactVisibleBottom(left, top, {evt});
+
+		this._doShowContent({
+			meta,
+			contentInfo,
+			position,
+			win: evt.view?.window,
+		});
+	}
+
+	/* -------------------------------------------- */
+
+	static async _pGetLinkContentInfo_pGetLinkVersionRedirectMeta ({page, source, hash, preloadId, customHashId, isAllowRedirect}) {
+		if (!isAllowRedirect || preloadId || customHashId) return null;
+		if (VetoolsConfig.get("styleSwitcher", "style") === "classic") return null;
+
+		return Renderer.redirect.pGetRedirectByHash(page, hash);
+	}
+
+	static _pGetLinkContentInfo_doVerifyToRender ({toRender, page, source, hash, preloadId, customHashId, isFluff}) {
+		if (toRender) return;
+		throw new Error(`Failed to load renderable content for: page="${page}" source="${source}" hash="${hash}" preloadId="${preloadId}" customHashId="${customHashId}" isFluff="${isFluff}"`);
+	}
+
+	static async _pGetLinkContentInfo_pGetToRender ({isFluff, page, source, hash, preloadId, customHashId}) {
+		// FIXME(Future) remove in favor of `customHashId`
+		if (preloadId != null) {
+			let toRender;
+
 			switch (page) {
 				case UrlUtil.PG_BESTIARY: {
 					const {_scaledCr: scaledCr, _scaledSpellSummonLevel: scaledSpellSummonLevel, _scaledClassSummonLevel: scaledClassSummonLevel} = Renderer.monster.getUnpackedCustomHashId(preloadId);
@@ -16372,42 +16697,56 @@ Renderer.hover = class {
 					}
 					break;
 				}
+
+				default: throw new Error("Unimplemented!");
 			}
-			this._pHandleLinkMouseOver_doVerifyToRender({toRender, page, source, hash, preloadId, customHashId, isFluff: meta.isFluff});
-		} else if (customHashId) {
-			toRender = await DataLoader.pCacheAndGet(page, source, hash);
-			toRender = await Renderer.hover.pApplyCustomHashId(page, toRender, customHashId);
-			this._pHandleLinkMouseOver_doVerifyToRender({toRender, page, source, hash, preloadId, customHashId, isFluff: meta.isFluff});
-		} else if (meta.isFluff) {
+
+			this._pGetLinkContentInfo_doVerifyToRender({toRender, page, source, hash, preloadId, customHashId, isFluff});
+			return toRender;
+		}
+
+		if (customHashId) {
+			const ent = await DataLoader.pCacheAndGet(page, source, hash);
+			const toRender = await Renderer.hover.pApplyCustomHashId(page, ent, customHashId);
+			this._pGetLinkContentInfo_doVerifyToRender({toRender, page, source, hash, preloadId, customHashId, isFluff});
+			return toRender;
+		}
+
+		if (isFluff) {
 			const entity = await DataLoader.pCacheAndGet(page, source, hash);
-			if (entity) toRender = await Renderer.utils.pGetProxyFluff({entity});
-		} else {
-			toRender = await DataLoader.pCacheAndGet(page, source, hash);
-			this._pHandleLinkMouseOver_doVerifyToRender({toRender, page, source, hash, preloadId, customHashId, isFluff: meta.isFluff});
+			if (!entity) return null;
+			// (Note that we don't verify, as no-fluff is valid)
+			return Renderer.utils.pGetProxyFluff({entity});
 		}
 
-		meta.isLoading = false;
+		const toRender = await DataLoader.pCacheAndGet(page, source, hash);
+		this._pGetLinkContentInfo_doVerifyToRender({toRender, page, source, hash, preloadId, customHashId, isFluff});
+		return toRender;
+	}
 
-		if (opts?.isDelay) {
-			meta.isDelayed = true;
-			ele.style.cursor = "help";
-			await MiscUtil.pDelay(1100);
-			meta.isDelayed = false;
+	static async _pGetLinkContentInfo ({ele, opts, isFluff}) {
+		const linkData = Renderer.hover._pGetLinkContentInfo_getLinkData({ele, opts});
+		let {page, source, hash} = linkData;
+		const {preloadId, customHashId, isFauxPage, isAllowRedirect} = linkData;
+
+		const redirectMeta = await this._pGetLinkContentInfo_pGetLinkVersionRedirectMeta({page, source, hash, preloadId, customHashId, isAllowRedirect});
+		if (redirectMeta != null) ({page, source, hash} = redirectMeta);
+
+		const toRender = await this._pGetLinkContentInfo_pGetToRender({isFluff, page, source, hash, preloadId, customHashId});
+
+		return {page, source, hash, isFauxPage, isFluff, toRender};
+	}
+
+	/* -------------------------------------------- */
+
+	static _doShowContent ({meta, contentInfo, position, win}) {
+		if (meta.windowMeta) {
+			meta.windowMeta.setPosition(position);
+			return;
 		}
 
-		// Reset cursor
-		ele.style.cursor = "";
-
-		// Check if we're still hovering the entity
-		if (!meta || (!meta.isHovered && !meta.isPermanent)) return;
-
-		const tmpEvt = meta._tmpEvt;
-		delete meta._tmpEvt;
-
-		// TODO(Future) avoid rendering e.g. creature scaling controls if `win?._IS_POPOUT`
-		const win = (evt.view || {}).window;
-
-		const eleContent = meta.isFluff
+		const {page, source, hash, isFauxPage, isFluff, toRender} = contentInfo;
+		const eleContent = isFluff
 			? Renderer.hover.getHoverContent_fluff(page, toRender)
 			: Renderer.hover.getHoverContent_stats(page, toRender);
 
@@ -16418,32 +16757,27 @@ Renderer.hover = class {
 			hash,
 		};
 
-		if (meta.windowMeta && !meta.isPermanent) {
-			meta.windowMeta.doClose();
-			meta.windowMeta = null;
-		}
-
 		meta.windowMeta = Renderer.hover.getShowWindow(
 			eleContent,
-			Renderer.hover.getWindowPositionFromEvent(tmpEvt || evt, {isPreventFlicker: !meta.isPermanent}),
+			position,
 			{
 				title: toRender?.name || "",
 				isPermanent: meta.isPermanent,
 				pageUrl: isFauxPage ? null : `${Renderer.get().baseUrl}${page}#${hash}`,
-				cbClose: () => meta.isHovered = meta.isPermanent = meta.isLoading = meta.isFluff = false,
+				cbClose: () => meta.doReset(),
 				isBookContent: Renderer.hover.isBookContentStyledPage(page),
 				compactReferenceData,
 				sourceData: toRender,
 			},
 		);
 
-		if (!meta.isFluff && !win?._IS_POPOUT) {
+		if (!isFluff && !win?._IS_POPOUT) {
 			const fnBind = Renderer.hover.getFnBindListenersCompact(page);
 			if (fnBind && toRender) fnBind(toRender, eleContent);
 		}
 	}
 
-	static _pHandleLinkMouseOver_getLinkData ({ele, opts}) {
+	static _pGetLinkContentInfo_getLinkData ({ele, opts}) {
 		if (opts?.isSpecifiedLinkData) {
 			return {
 				page: opts.page,
@@ -16459,25 +16793,13 @@ Renderer.hover = class {
 		return Renderer.hover.getLinkElementData(ele);
 	}
 
-	static async _pHandleLinkMouseOver_pGetVersionRedirectMeta ({page, source, hash, preloadId, customHashId, isAllowRedirect}) {
-		if (!isAllowRedirect || preloadId || customHashId) return null;
-		if (VetoolsConfig.get("styleSwitcher", "style") === "classic") return null;
-
-		return Renderer.redirect.pGetRedirectByHash(page, hash);
-	}
-
-	static _pHandleLinkMouseOver_doVerifyToRender ({toRender, page, source, hash, preloadId, customHashId, isFluff}) {
-		if (toRender) return;
-		throw new Error(`Failed to load renderable content for: page="${page}" source="${source}" hash="${hash}" preloadId="${preloadId}" customHashId="${customHashId}" isFluff="${isFluff}"`);
-	}
-
 	// (Baked into render strings)
 	static handleInlineMouseOver (evt, ele, entry, opts) {
 		Renderer.hover._doInit();
 
 		entry = entry || JSON.parse(ele.getAttribute("data-vet-entry"));
 
-		let meta = Renderer.hover._handleGenericMouseOverStart({evt, ele});
+		let meta = Renderer.hover._handleGenericShowStart({ele, mode: "hover", isPermanent: !!evt.shiftKey});
 		if (meta == null) return;
 
 		meta.isLoading = false;
@@ -16486,10 +16808,7 @@ Renderer.hover = class {
 		ele.style.cursor = "";
 
 		// Check if we're still hovering the entity
-		if (!meta || (!meta.isHovered && !meta.isPermanent)) return;
-
-		const tmpEvt = meta._tmpEvt;
-		delete meta._tmpEvt;
+		if (!meta.isHeldOpen({mode: "hover"})) return;
 
 		const win = (evt.view || {}).window;
 
@@ -16500,16 +16819,30 @@ Renderer.hover = class {
 
 		meta.windowMeta = Renderer.hover.getShowWindow(
 			Renderer.hover.getHoverContent_generic(entry, opts),
-			Renderer.hover.getWindowPositionFromEvent(tmpEvt || evt, {isPreventFlicker: !meta.isPermanent}),
+			Renderer.hover.getWindowPositionFromEvent(meta.getPopTempEvt({evtDefault: evt}), {isPreventFlicker: !meta.isPermanent}),
 			{
 				title: entry?.name || "",
 				isPermanent: meta.isPermanent,
 				pageUrl: null,
-				cbClose: () => meta.isHovered = meta.isPermanent = meta.isLoading = false,
+				cbClose: () => meta.doReset(),
 				isBookContent: true,
 				sourceData: entry,
 			},
 		);
+	}
+
+	static _handleLinkLeave (ele, meta, {mode}) {
+		if (meta.mode !== mode) return;
+
+		meta.isAttended = false;
+
+		if (meta.isHeldOpen()) return;
+
+		ele.style.cursor = "";
+
+		if (!meta.windowMeta) return;
+		meta.windowMeta.doClose();
+		meta.windowMeta = null;
 	}
 
 	// (Baked into render strings)
@@ -16518,7 +16851,7 @@ Renderer.hover = class {
 
 		// Early-exit -- Plutonium binds this as a global `mouseout`, so avoid
 		//   handling any element which we are not explicitly tracking.
-		if (!meta) return;
+		if (!meta || meta.mode !== "hover") return;
 
 		ele.style.cursor = "";
 
@@ -16526,21 +16859,27 @@ Renderer.hover = class {
 
 		if (evt.shiftKey) {
 			meta.isPermanent = true;
-			meta.windowMeta.setIsPermanent(true);
+			meta.windowMeta?.setIsPermanent(true);
 			return;
 		}
 
-		meta.isHovered = false;
-		if (meta.windowMeta) {
-			meta.windowMeta.doClose();
-			meta.windowMeta = null;
-		}
+		Renderer.hover._handleLinkLeave(ele, meta, {mode: "hover"});
+	}
+
+	static handleLinkBlur (evt, ele) {
+		const meta = Renderer.hover._eleCache.get(ele);
+		if (!meta) return;
+
+		Renderer.hover._handleLinkLeave(ele, meta, {mode: "focus"});
 	}
 
 	// (Baked into render strings)
 	static handleLinkMouseMove (evt, ele) {
 		const meta = Renderer.hover._eleCache.get(ele);
-		if (!meta || meta.isPermanent) return;
+
+		if (!meta || meta.mode !== "hover") return;
+
+		if (meta.isPermanent) return;
 
 		// If loading has finished, but we're not displaying the element yet (e.g. because it has been delayed)
 		if (meta.isDelayed) {
@@ -16570,7 +16909,7 @@ Renderer.hover = class {
 	static handlePredefinedMouseOver (evt, ele, entryId, opts) {
 		opts = opts || {};
 
-		const meta = Renderer.hover._handleGenericMouseOverStart({evt, ele});
+		const meta = Renderer.hover._handleGenericShowStart({ele, mode: "hover", isPermanent: !!evt.shiftKey});
 		if (meta == null) return;
 
 		Renderer.hover.cleanTempWindows();
@@ -16579,7 +16918,7 @@ Renderer.hover = class {
 
 		meta.isLoading = false;
 		// Check if we're still hovering the entity
-		if (!meta.isHovered && !meta.isPermanent) return;
+		if (!meta.isHeldOpen({mode: "hover"})) return;
 
 		meta.windowMeta = Renderer.hover.getShowWindow(
 			Renderer.hover.getHoverContent_generic(toRender, opts),
@@ -16587,7 +16926,7 @@ Renderer.hover = class {
 			{
 				title: toRender.data && toRender.data.hoverTitle != null ? toRender.data.hoverTitle : toRender.name,
 				isPermanent: meta.isPermanent,
-				cbClose: () => meta.isHovered = meta.isPermanent = meta.isLoading = false,
+				cbClose: () => meta.doReset(),
 				sourceData: toRender,
 			},
 		);
@@ -16654,7 +16993,7 @@ Renderer.hover = class {
 			{
 				title: toRender.data && toRender.data.hoverTitle != null ? toRender.data.hoverTitle : toRender.name,
 				isPermanent: meta.isPermanent,
-				cbClose: () => meta.isHovered = meta.isPermanent = meta.isLoading = false,
+				cbClose: () => meta.doReset(),
 				sourceData: toRender,
 			},
 		);
@@ -16695,18 +17034,35 @@ Renderer.hover = class {
 		};
 	}
 
-	static getWindowPositionExact (x, y, evt = null) {
+	/**
+	 * @param x
+	 * @param y
+	 * @param [opts]
+	 * @param {?Event} [opts.evt]
+	 * @param {?number} [opts.offsetX]
+	 * @param {?number} [opts.offsetY]
+	 */
+	static getWindowPositionExact (x, y, {evt = null, offsetX = null, offsetY = null} = {}) {
 		return {
 			window: evt?.view?.window || window,
 			mode: "exact",
 			x,
 			y,
+			offsetX,
+			offsetY,
 		};
 	}
 
-	static getWindowPositionExactVisibleBottom (x, y, evt = null) {
+	static getWindowPositionExactRight (x, y, {evt = null, offsetX = null} = {}) {
 		return {
-			...Renderer.hover.getWindowPositionExact(x, y, evt),
+			...Renderer.hover.getWindowPositionExact(x, y, {evt, offsetX}),
+			mode: "exactRight",
+		};
+	}
+
+	static getWindowPositionExactVisibleBottom (x, y, {evt = null, offsetX = null, offsetY = null} = {}) {
+		return {
+			...Renderer.hover.getWindowPositionExact(x, y, {evt, offsetX, offsetY}),
 			mode: "exactVisibleBottom",
 		};
 	}
@@ -16969,7 +17325,7 @@ Renderer.hover = class {
 
 			if (drag.type !== this._DRAG_TYP_MOVE) {
 				wrpContent.vee.css("max-height", "");
-				eleHov.vee.css("max-width", "");
+				eleHov.vee.css({"max-width": ""});
 			}
 			Renderer.hover._getShowWindow_adjustPosition({eleHov, wrpContent, position, eventChannel});
 
@@ -17179,10 +17535,7 @@ Renderer.hover = class {
 		if (evt.button === 0) evt.preventDefault();
 
 		hoverWindow.zIndex = Renderer.hover._getNextZIndex(hoverId);
-		eleHov.vee.css({
-			"z-index": hoverWindow.zIndex,
-			"animation": "initial",
-		});
+		eleHov.vee.css({"z-index": hoverWindow.zIndex});
 		drag.type = type;
 		drag.startX = EventUtil.getClientX(evt);
 		drag.startY = EventUtil.getClientY(evt);
@@ -17196,7 +17549,7 @@ Renderer.hover = class {
 				...(isResizeOnlyWidth ? {} : {"height": `${drag.baseHeight}px`}),
 				"max-height": "initial",
 			});
-			eleHov.vee.css("max-width", "initial");
+			eleHov.vee.css({"max-width": "initial"});
 		}
 	}
 
@@ -17210,7 +17563,7 @@ Renderer.hover = class {
 	static _getShowWindow_handleNorthDrag ({wrpContent, eleHov, drag, evt}) {
 		const diffY = Math.max(drag.startY - EventUtil.getClientY(evt), 80 - drag.baseHeight); // prevent <80 height, as this will cause the box to move downwards
 		wrpContent.vee.css("height", `${drag.baseHeight + diffY}px`);
-		eleHov.vee.css("top", `${drag.baseTop - diffY}px`);
+		eleHov.vee.css({"top": `${drag.baseTop - diffY}px`});
 		drag.startY = EventUtil.getClientY(evt);
 		drag.baseHeight = wrpContent.vee.outerHeight();
 		drag.baseTop = parseFloat(eleHov.vee.css("top").slice(0, -2));
@@ -17218,7 +17571,7 @@ Renderer.hover = class {
 
 	static _getShowWindow_handleEastDrag ({wrpContent, eleHov, drag, evt}) {
 		const diffX = drag.startX - EventUtil.getClientX(evt);
-		eleHov.vee.css("width", `${drag.baseWidth - diffX}px`);
+		eleHov.vee.css({"width": `${drag.baseWidth - diffX}px`});
 		drag.startX = EventUtil.getClientX(evt);
 		drag.baseWidth = parseFloat(eleHov.vee.css("width").slice(0, -2));
 	}
@@ -17266,11 +17619,11 @@ Renderer.hover = class {
 			case "autoFromElement": {
 				const bcr = eleHov.getBoundingClientRect();
 
-				if (positionNxt.isFromBottom) eleHov.vee.css("top", `${positionNxt.bcr.top - (bcr.height + 10)}px`);
-				else eleHov.vee.css("top", `${positionNxt.bcr.top + positionNxt.bcr.height + 10}px`);
+				if (positionNxt.isFromBottom) eleHov.vee.css({"top": `${positionNxt.bcr.top - (bcr.height + 10)}px`});
+				else eleHov.vee.css({"top": `${positionNxt.bcr.top + positionNxt.bcr.height + 10}px`});
 
-				if (positionNxt.isFromRight) eleHov.vee.css("left", `${(positionNxt.clientX || positionNxt.bcr.left) - (bcr.width + 10)}px`);
-				else eleHov.vee.css("left", `${(positionNxt.clientX || (positionNxt.bcr.left + positionNxt.bcr.width)) + 10}px`);
+				if (positionNxt.isFromRight) eleHov.vee.css({"left": `${(positionNxt.clientX || positionNxt.bcr.left) - (bcr.width + 10)}px`});
+				else eleHov.vee.css({"left": `${(positionNxt.clientX || (positionNxt.bcr.left + positionNxt.bcr.width)) + 10}px`});
 
 				// region Sync position info when updating
 				if (position !== positionNxt) {
@@ -17283,18 +17636,29 @@ Renderer.hover = class {
 
 				break;
 			}
-			case "exact": {
+			case "exact":
+			case "exactRight": {
+				const offsetX = (
+					positionNxt.mode === "exactRight"
+						? -eleHov.getBoundingClientRect().width
+						: 0
+				)
+					+ (positionNxt.offsetX || 0);
+				const offsetY = positionNxt.offsetY || 0;
+
 				eleHov.vee.css({
-					"left": `${positionNxt.x}px`,
-					"top": `${positionNxt.y}px`,
+					"left": `${positionNxt.x + offsetX}px`,
+					"top": `${positionNxt.y + offsetY}px`,
 				});
 				break;
 			}
 			case "exactVisibleBottom": {
+				const offsetX = positionNxt.offsetX || 0;
+				const offsetY = positionNxt.offsetY || 0;
+
 				eleHov.vee.css({
-					"left": `${positionNxt.x}px`,
-					"top": `${positionNxt.y}px`,
-					"animation": "initial", // Briefly remove the animation so we can calculate the height
+					"left": `${positionNxt.x + offsetX}px`,
+					"top": `${positionNxt.y + offsetY}px`,
 				});
 
 				let yPos = positionNxt.y;
@@ -17303,10 +17667,7 @@ Renderer.hover = class {
 				const height = position.window.innerHeight;
 				if (posBottom > height) {
 					yPos = position.window.innerHeight - winHeight;
-					eleHov.vee.css({
-						"top": `${yPos}px`,
-						"animation": "",
-					});
+					eleHov.vee.css({"top": `${yPos}px`});
 				}
 
 				break;
@@ -17653,13 +18014,30 @@ Renderer.hover = class {
 		}
 	}
 
-	static isSmallScreen (evt) {
+	/* -------------------------------------------- */
+
+	static _isSizedScreen ({evt, minWidth = null, maxWidth = null}) {
 		if (typeof window === "undefined") return false;
+
+		if (minWidth == null && maxWidth == null) throw new Error(`At least one of "minWidth" and "maxWidth" must be specified!`);
 
 		evt = evt || {};
 		const win = (evt.view || {}).window || window;
-		return win.innerWidth <= 768;
+
+		if (maxWidth != null && win.innerWidth > maxWidth) return false;
+		if (minWidth != null && win.innerWidth < minWidth) return false;
+		return true;
 	}
+
+	static isSmallScreen (evt) {
+		return this._isSizedScreen({evt, maxWidth: 768});
+	}
+
+	static isMinLargeScreen (evt) {
+		return this._isSizedScreen({evt, minWidth: 1200});
+	}
+
+	/* -------------------------------------------- */
 
 	/**
 	 * @param page
